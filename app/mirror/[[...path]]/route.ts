@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const ORIGIN = "https://www.segurosimediato.com.br";
+const ORIGIN = process.env.MIRROR_ORIGIN || "https://www.segurosimediato.com.br";
 
 /** remove attrs que podem bloquear no iframe */
 function stripAttrs(html: string) {
@@ -27,7 +27,7 @@ function rewriteLinks(html: string, rawPath: string) {
     rawPath && rawPath.includes("/") ? "/" + rawPath.replace(/[^/]*$/, "") : "/";
 
   // 0) Protocol-relative (//cdn...) → manter como absoluto (não reescrever)
-  //  (nada a fazer aqui, só garantimos que as outras regras não os toquem)
+  // (nada a fazer aqui, só garantimos que as outras regras não os toquem)
 
   // 1) Absolutos do mesmo domínio → /mirror/...
   html = html.replace(
@@ -36,7 +36,7 @@ function rewriteLinks(html: string, rawPath: string) {
   );
 
   // 2) Root-relativos de UMA barra (ex.: "/contato") → /mirror/...
-  //    Ignora URLs que começam com "//" (protocol-relative)
+  // Ignora URLs que começam com "//" (protocol-relative)
   html = html.replace(
     /(href|src|action)=("|\')(\/(?!\/)[^"']*)\2/gi,
     (_m, attr, q, path) => `${attr}=${q}/mirror${path}${q}`
@@ -46,7 +46,7 @@ function rewriteLinks(html: string, rawPath: string) {
   html = html.replace(
     /(href|src|action)=("|\')([^"'#:][^"']*)\2/gi,
     (_m, attr, q, rel) => {
-      if (/^(data:|blob:|\/\/)/i.test(rel)) return _m as string;
+      if (/^(https?:\/\/|\/\/|\/|#|mailto:|tel:|javascript:|data:|blob:)/i.test(rel)) return _m as string;
       const resolved = resolveRelative(baseDir, rel);
       return `${attr}=${q}/mirror${resolved}${q}`;
     }
@@ -58,7 +58,7 @@ function rewriteLinks(html: string, rawPath: string) {
     (_m, attr, q, val) => {
       const rewritten = val
         .split(",")
-        .map(s => {
+        .map((s: string) => {
           const [url, size] = s.trim().split(/\s+/, 2);
           if (!url) return s;
 
@@ -66,23 +66,33 @@ function rewriteLinks(html: string, rawPath: string) {
           if (/^https?:\/\/(www\.)?segurosimediato\.com\.br\//i.test(url)) {
             return `/mirror${url.replace(/^https?:\/\/(www\.)?segurosimediato\.com\.br/i, "")}${size ? " " + size : ""}`;
           }
+
+          // absolutas externas: manter intactas
+          if (/^https?:\/\//i.test(url)) {
+            return `${url}${size ? " " + size : ""}`;
+          }
+
           // protocol-relative: manter
           if (/^\/\//.test(url)) {
             return `${url}${size ? " " + size : ""}`;
           }
+
           // root-relativo (uma barra)
           if (/^\/(?!\/)/.test(url)) {
             return `/mirror${url}${size ? " " + size : ""}`;
           }
+
           // esquemas especiais
           if (/^(#|mailto:|tel:|javascript:|data:|blob:)/i.test(url)) {
             return `${url}${size ? " " + size : ""}`;
           }
+
           // relativo “nu”
           const resolved = resolveRelative(baseDir, url);
           return `/mirror${resolved}${size ? " " + size : ""}`;
         })
         .join(", ");
+
       return `${attr}=${q}${rewritten}${q}`;
     }
   );
@@ -117,6 +127,8 @@ export async function GET(
   const rawPath = (path ?? []).join("/");
   const target = rawPath ? `${ORIGIN}/${rawPath}` : `${ORIGIN}/`;
 
+  console.log(`[Mirror] Fetching: ${target}`);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25_000);
 
@@ -129,10 +141,12 @@ export async function GET(
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
+
     clearTimeout(timer);
 
     if (!r.ok) {
       const txt = await r.text().catch(() => "");
+      console.error(`[Mirror] HTTP Error ${r.status} on ${target}: ${txt.slice(0, 200)}`);
       return new NextResponse(
         `<!doctype html><h1>Fetch ${r.status}</h1><pre>${txt.slice(0,500)}</pre>`,
         { status: r.status, headers: { "content-type": "text/html; charset=utf-8" } }
@@ -140,9 +154,14 @@ export async function GET(
     }
 
     let html = await r.text();
+
+    console.log(`[Mirror] Fetched ${html.length} chars from ${target}`);
+
     html = stripAttrs(html);
     html = rewriteLinks(html, rawPath);
     html = injectLocalBase(html, rawPath);
+
+    console.log(`[Mirror] Rewrote links for path: ${rawPath}, ready to serve.`);
 
     return new NextResponse(html, {
       status: 200,
@@ -150,6 +169,7 @@ export async function GET(
     });
   } catch (e: any) {
     clearTimeout(timer);
+    console.error(`[Mirror] Error on ${target}: ${String(e?.message || e)}`);
     return new NextResponse(
       `<!doctype html><h1>Erro</h1><pre>${String(e?.message || e)}</pre>`,
       { status: 500, headers: { "content-type": "text/html; charset=utf-8" } }
