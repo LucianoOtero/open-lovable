@@ -28,6 +28,8 @@ import HeaderDropdownWrapper from "@/components/shared/header/Dropdown/Wrapper/W
 import GithubIcon from "@/components/shared/header/Github/_svg/GithubIcon";
 import ButtonUI from "@/components/ui/shadcn/button"
 
+import Image from "next/image";
+
 interface SearchResult {
   url: string;
   title: string;
@@ -702,10 +704,13 @@ export default function HomePage() {
                       </div>
                       
                       {result.screenshot ? (
-                        <img 
+                        <Image 
                           src={result.screenshot} 
                           alt={result.title}
                           className="w-full h-full object-cover object-top"
+                          width={400}
+                          height={240}
+                          sizes="(max-width: 768px) 100vw, 50vw"
                           loading="lazy"
                         />
                       ) : (
