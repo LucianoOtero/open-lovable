@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils/cn';
+import { useInputMask } from '@/hooks/useInputMask';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -20,30 +21,7 @@ export function Input({
   className, 
   ...props 
 }: InputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (mask && inputRef.current && typeof window !== 'undefined') {
-      // Aplicar máscara baseada no tipo
-      const $ = (window as any).$;
-      if ($) {
-        switch (mask) {
-          case 'cpf':
-            $(inputRef.current).mask('000.000.000-00');
-            break;
-          case 'cep':
-            $(inputRef.current).mask('00000-000');
-            break;
-          case 'placa':
-            $(inputRef.current).mask('SSS-0A00');
-            break;
-          case 'telefone':
-            $(inputRef.current).mask('(00) 00000-0000');
-            break;
-        }
-      }
-    }
-  }, [mask]);
+  const inputRef = useInputMask(mask);
 
   return (
     <div className="space-y-1">

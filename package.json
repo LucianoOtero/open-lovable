@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack --port $PORT",
+    "dev": "next dev --turbopack --port 3001",
     "dev:win": "next dev --turbopack --port %PORT%",
     "dev:local": "next dev --turbopack",
     "build": "next build",
